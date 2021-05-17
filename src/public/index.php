@@ -57,7 +57,8 @@ $app->get('/update-stock', function (Request $request, Response $response) {
 
       $skuInventoryItemId = [];
 
-      //first location
+      //first shop location, if you need more then
+      //one the whole call with sku as key has to be changed
       $shopifyLocationsResponse = performShopifyRequest(
         $shop, $accessToken, 'locations', []
       );

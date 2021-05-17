@@ -165,7 +165,7 @@ function getAccessToken($shop, $apiKey, $secret, $code) {
 
 // Helper method for making Shopify API requests
 function performShopifyRequest($shop, $token, $resource, $params = array(), $method = 'GET') {
-  $url = "https://{$shop}/admin/{$resource}.json";
+  $url = "https://{$shop}/admin/api/2021-04/{$resource}.json";
 
   $curlOptions = array(
     CURLOPT_RETURNTRANSFER => TRUE,
