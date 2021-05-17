@@ -7,5 +7,4 @@ CREATE TABLE clients (
 );
 
 CREATE USER 'dbsync'@'localhost' IDENTIFIED  WITH mysql_native_password BY 'q86M#5Hm';
-GRANT INSERT ON shopify.clients TO 'dbsync'@'localhost' WITH GRANT OPTION;
-GRANT SELECT ON shopify.clients TO 'dbsync'@'localhost' WITH GRANT OPTION;
+GRANT INSERT, UPDATE, DELETE ON shopify.clients TO 'dbsync'@'localhost' WITH GRANT OPTION;
