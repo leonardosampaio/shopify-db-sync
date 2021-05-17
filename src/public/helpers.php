@@ -205,14 +205,13 @@ function performShopifyRequest($shop, $token, $resource, $params = array(), $met
   $body = substr($response, $header_size);
   curl_close($curl);
 
-  //weird bug, in 8.0 this is not necessary
+  //in php 8.0 this is not necessary
   preg_match('/<(.*)?>; rel="previous"/', $header, $matches);
   if ($matches && $matches[1])
   {
     $header = str_replace('<'.$matches[1],'',$header);
     $header = str_replace('>; rel="previous"','',$header);
   }
-  //bug
 
   preg_match('/<(.*)?>; rel="next"/', $header, $matches);
 
@@ -222,5 +221,6 @@ function performShopifyRequest($shop, $token, $resource, $params = array(), $met
     //limit: 250 itens/request
     $arr['next'] = trim($matches[1]);
   }
+
   return $arr;
 }

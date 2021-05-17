@@ -33,7 +33,7 @@ $app->get('/update-stock', function (Request $request, Response $response) {
     '::1',
 
     //debug
-    '45.181.231.202'
+    '177.91.54.38'
   );
 
   $clientIp = $_SERVER['REMOTE_ADDR'];
@@ -65,27 +65,26 @@ $app->get('/update-stock', function (Request $request, Response $response) {
       $locationId = $locations[0]['id'];
 
       $products = [];
-      $next = null;
+      $nextPage = null;
       do
       {
         $params = [];
-        if ($next)
+        if ($nextPage)
         {
-          $params['page_info'] = $next;
+          $params['page_info'] = $nextPage;
         }
         $shopifyProductsResponse = performShopifyRequest(
           $shop, $accessToken, 'products', $params
         );
         $products = array_merge($products, $shopifyProductsResponse['products']);
         
-        $next = isset($shopifyProductsResponse['next']) ? 
-          $shopifyProductsResponse['next'] : null;
-        if ($next)
+        $nextPage = null;
+        if ($shopifyProductsResponse['next'])
         {
           preg_match('/page_info\=(.*)/', $shopifyProductsResponse['next'], $matches);
-          $next = $matches && $matches[1] ? $matches[1] : null;
+          $nextPage = $matches && $matches[1] ? $matches[1] : null;
         }
-      } while ($next);
+      } while ($nextPage);
 
       $apiCurrentStock = [];
       foreach($products as $product)
@@ -101,10 +100,30 @@ $app->get('/update-stock', function (Request $request, Response $response) {
       }
 
       $twentyMinutesAgo = date('Y-m-d\TP', strtotime('-20 minutes'));
-      $shopifyOrdersResponse = performShopifyRequest(
-        $shop, $accessToken, 'orders', array('created_at_min' => $twentyMinutesAgo)
-      );
-      $orders = $shopifyOrdersResponse['orders'];
+      $orders = [];
+      $nextPage = null;
+      do {
+        $params = [
+          'created_at_min' => $twentyMinutesAgo
+        ];
+        if ($nextPage)
+        {
+          $params = [];
+          $params['page_info'] = $nextPage;
+        }
+        $shopifyOrdersResponse = performShopifyRequest(
+          $shop, $accessToken, 'orders', $params
+        );
+        $orders = array_merge($orders, $shopifyOrdersResponse['orders']);
+
+        $nextPage = null;
+        if ($shopifyOrdersResponse['next'])
+        {
+          preg_match('/page_info\=(.*)/', $shopifyOrdersResponse['next'], $matches);
+          $nextPage = $matches && $matches[1] ? $matches[1] : null;
+        }
+      } while ($nextPage);
+
       $apiOrders = [];
       foreach($orders as $order)
       {
