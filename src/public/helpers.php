@@ -1,9 +1,64 @@
 <?php
 
+function callApi($json)
+{
+  //TODO call API with $json
+  $jsonResult = "";
+
+  //debug
+  $arr = json_decode($json);
+  $shop = $arr->storeId;
+  $stockDelta = [];
+  foreach ($arr->currentStock as $stock)
+  {
+    $stockDelta[] = [
+      'SkuId' => $stock->SkuId,
+      'quantityDelta' => rand(1, 9999)
+    ];
+  }
+  $jsonResult = json_encode(
+    [
+      'storeId'=> $shop,
+      'stock'=>   $stockDelta
+    ]
+  );
+  //debug
+
+  return $jsonResult;
+}
+
+
+function microtime_float()
+{
+    list($usec, $sec) = explode(" ", microtime());
+    return ((float)$usec + (float)$sec);
+}
+
 function validateApiKey($key, $shop)
 {
   //TODO
   return true;
+}
+
+function getAll($dbhost, $db, $dbuser, $dbpass)
+{
+  //TODO error handling
+  $conn = new mysqli($dbhost, $dbuser, $dbpass, $db) or die("Connect failed: %s\n". $conn -> error);
+
+  $stmt = $conn->prepare("SELECT shop, shopify_access_key FROM $db.clients");
+  $stmt->execute();
+  $stmt->bind_result($shop, $accessKey);
+
+  $arr = [];
+  while ($stmt->fetch())
+  {
+    $arr[] = ['shop'=>$shop, 'accessKey'=>$accessKey];
+  }
+
+  $stmt->close();
+  $conn->close();
+
+  return $arr;
 }
 
 function getDbData($dbhost, $db, $dbuser, $dbpass, $shop)
@@ -16,12 +71,13 @@ function getDbData($dbhost, $db, $dbuser, $dbpass, $shop)
   $stmt->execute();
   $stmt->bind_result($shop, $key, $accessKey);
 
-  $stmt->fetch(); //1 result
-
-  $arr = 
-    ['shop'=>$shop,
-    'key'=>$key,
-    'accessKey'=>$accessKey];
+  if ($stmt->fetch()) //1 result
+  {
+    $arr = 
+      ['shop'=>$shop,
+      'key'=>$key,
+      'accessKey'=>$accessKey];
+  }
 
   $stmt->close();
   $conn->close();
@@ -37,9 +93,20 @@ function putDbData($dbhost, $db, $dbuser, $dbpass, $shop, $key, $accessToken)
   $stmt = $conn->prepare("INSERT INTO $db.clients (id, shop, api_key, shopify_access_key) VALUES (NULL, ?,?,?)");
   $stmt->bind_param("sss", $shop, $key, $accessToken);
   $res = $stmt->execute();
+  $conn->close();
 
-  var_dump($res);
+  return $stmt->affected_rows;
+  
+}
 
+function updateDbData($dbhost, $db, $dbuser, $dbpass, $shop, $key, $accessToken)
+{
+  //TODO error handling
+  $conn = new mysqli($dbhost, $dbuser, $dbpass, $db) or die("Connect failed: %s\n". $conn -> error);
+
+  $stmt = $conn->prepare("UPDATE $db.clients SET api_key = ?, shopify_access_key = ? WHERE shop = ?");
+  $stmt->bind_param("sss", $key, $accessToken, $shop);
+  $stmt->execute();
   $conn->close();
 
   return $stmt->affected_rows;
@@ -101,7 +168,8 @@ function performShopifyRequest($shop, $token, $resource, $params = array(), $met
   $url = "https://{$shop}/admin/{$resource}.json";
 
   $curlOptions = array(
-    CURLOPT_RETURNTRANSFER => TRUE
+    CURLOPT_RETURNTRANSFER => TRUE,
+    CURLOPT_HEADER => TRUE
   );
 
   if ($method == 'GET') {
@@ -132,7 +200,27 @@ function performShopifyRequest($shop, $token, $resource, $params = array(), $met
   $curl = curl_init();
   curl_setopt_array($curl, $curlOptions);
   $response = curl_exec($curl);
+  $header_size = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
+  $header = substr($response, 0, $header_size);
+  $body = substr($response, $header_size);
   curl_close($curl);
 
-  return json_decode($response, TRUE);
+  //weird bug, in 8.0 this is not necessary
+  preg_match('/<(.*)?>; rel="previous"/', $header, $matches);
+  if ($matches && $matches[1])
+  {
+    $header = str_replace('<'.$matches[1],'',$header);
+    $header = str_replace('>; rel="previous"','',$header);
+  }
+  //bug
+
+  preg_match('/<(.*)?>; rel="next"/', $header, $matches);
+
+  $arr = json_decode($body, TRUE);
+  if (isset($matches[1]) && trim($matches[1]) != '')
+  {
+    //limit: 250 itens/request
+    $arr['next'] = trim($matches[1]);
+  }
+  return $arr;
 }

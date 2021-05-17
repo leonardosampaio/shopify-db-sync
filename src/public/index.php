@@ -12,7 +12,9 @@ $config = [
   'apiKey' => $_ENV['API_KEY'],
   'secret' => $_ENV['SECRET'],
   'host' => $_ENV['HOST'],
-  'settings' => [
+
+  //debug
+  'settings' => [ 
     'displayErrorDetails' => true,
     'debug'=>true
   ],
@@ -20,6 +22,136 @@ $config = [
 
 $app = new \Slim\App($config);
 
+$app->get('/update-stock', function (Request $request, Response $response) {
+  
+  $starttime = microtime_float();
+
+  $newResponse = $response->withHeader('Content-type', 'application/json');
+
+  $whitelist = array(
+    '127.0.0.1',
+    '::1',
+
+    //debug
+    '45.181.231.202'
+  );
+
+  $clientIp = $_SERVER['REMOTE_ADDR'];
+
+  if(in_array($clientIp, $whitelist))
+  {
+
+    $dotenv = new Dotenv\Dotenv(__DIR__ . str_repeat(DIRECTORY_SEPARATOR . '..', 2));
+    $dotenv->load();
+
+    $dbData = getAll(
+      $_ENV['DB_HOST'],
+      $_ENV['DB_NAME'],
+      $_ENV['DB_USER'], 
+      $_ENV['DB_PASSWORD']);
+    
+    foreach ($dbData as $shopAndAccessKey)
+    {
+      $shop =       $shopAndAccessKey['shop'];
+      $accessToken =  $shopAndAccessKey['accessKey'];
+
+      $skuInventoryItemId = [];
+
+      //first location
+      $shopifyLocationsResponse = performShopifyRequest(
+        $shop, $accessToken, 'locations', []
+      );
+      $locations = $shopifyLocationsResponse['locations'];
+      $locationId = $locations[0]['id'];
+
+      $products = [];
+      $next = null;
+      do
+      {
+        $params = [];
+        if ($next)
+        {
+          $params['page_info'] = $next;
+        }
+        $shopifyProductsResponse = performShopifyRequest(
+          $shop, $accessToken, 'products', $params
+        );
+        $products = array_merge($products, $shopifyProductsResponse['products']);
+        
+        $next = isset($shopifyProductsResponse['next']) ? 
+          $shopifyProductsResponse['next'] : null;
+        if ($next)
+        {
+          preg_match('/page_info\=(.*)/', $shopifyProductsResponse['next'], $matches);
+          $next = $matches && $matches[1] ? $matches[1] : null;
+        }
+      } while ($next);
+
+      $apiCurrentStock = [];
+      foreach($products as $product)
+      {
+        foreach($product['variants'] as $variant)
+        {
+          $apiCurrentStock[] = [
+            'SkuId' =>    $variant['sku'],
+            'quantity' => $variant['inventory_quantity']
+          ];
+          $skuInventoryItemId[$variant['sku']] = $variant['inventory_item_id'];
+        }
+      }
+
+      $twentyMinutesAgo = date('Y-m-d\TP', strtotime('-20 minutes'));
+      $shopifyOrdersResponse = performShopifyRequest(
+        $shop, $accessToken, 'orders', array('created_at_min' => $twentyMinutesAgo)
+      );
+      $orders = $shopifyOrdersResponse['orders'];
+      $apiOrders = [];
+      foreach($orders as $order)
+      {
+        foreach($order['line_items'] as $lineItem)
+        {
+          $apiOrders[] = [
+            'SkuId' =>    $lineItem['sku'],
+            'quantity' => $lineItem['quantity']
+          ];
+        }
+      }
+
+      $apiResult = callApi(
+        json_encode(
+          [
+            'storeId' =>      $shop,
+            'orders' =>       $apiOrders,
+            'currentStock' => $apiCurrentStock
+          ]));
+      
+      $newStock = json_decode($apiResult);
+
+      $shop = $newStock->storeId;
+      foreach($newStock->stock as $stock)
+      {
+        performShopifyRequest(
+          $shop, $accessToken, 'inventory_levels/set',
+            [
+              'inventory_item_id' => $skuInventoryItemId[$stock->SkuId],
+              'location_id' => $locationId,
+              'available' => $stock->quantityDelta
+            ],
+            'POST'
+        );
+      }
+    }
+
+    return $newResponse->getBody()->write(
+      json_encode(['status'=>'executed', 'elapsedTimeInSeconds'=>(microtime_float() - $starttime)]));
+  }
+
+
+  return $newResponse->getBody()->write(
+    json_encode(['status'=>'error', 'message'=>"IP $clientIp is not whitelisted"]));
+});
+
+//call this js in from fronted (settings.php); if ok, submit key
 $app->get('/validate-key', function (Request $request, Response $response) {
   $params = $request->getQueryParams();
   $newResponse = $response->withHeader('Content-type', 'application/json');
@@ -37,7 +169,7 @@ $app->get('/', function (Request $request, Response $response) {
    return $response->getBody()->write("Invalid shop domain!");
   }
   
-  $scope = 'read_products,read_orders';
+  $scope = 'read_locations,read_products,read_orders,write_inventory';
   $redirectUri = $host . $this->router->pathFor('oAuthCallback');
   $installUrl = "https://{$shop}/admin/oauth/authorize?client_id={$apiKey}&scope={$scope}&redirect_uri={$redirectUri}";
 
@@ -76,11 +208,12 @@ $app->get('/auth/shopify/callback', function (Request $request, Response $respon
   else
   {
     if ($params['key'] && 
-      $params['shop'] && 
-      validateApiKey($params['key'], $params['shop']))
+    $params['shop'] && 
+    validateApiKey($params['key'], $params['shop']))
     {
       $accessToken = $params['accessToken'];
       
+      //saving API key for the first time
       putDbData(
         $_ENV['DB_HOST'],
         $_ENV['DB_NAME'],
@@ -114,37 +247,19 @@ $app->get('/auth/shopify/callback', function (Request $request, Response $respon
     $templateParams['key'] = $dbData['key'];
     $templateParams['disabled']=true;
 
-    $accessToken = $dbData['accessToken'];
-
-    //TODO api access
-
-
-
-
-
-    /*
-    $shopifyResponse = performShopifyRequest(
-      $params['shop'], $accessToken, 'products', array('limit' => 10)
-    );
-    $products = $shopifyResponse['products'];
-
-    $responseBody = "<h1>Your products:</h1>";
-      foreach ($products as $product) {
-      var_dump($product);
-        $responseBody = $responseBody . '<br>' . $product['title'];
-      }
-
-    $shopifyResponse = performShopifyRequest(
-        $params['shop'], $accessToken, 'orders', array('limit' => 10)
-      );
-      $orders = $shopifyResponse['orders'];
-
-    echo 'orders</p>';
-    var_dump($orders);
-
-    echo 'token</p>';
-    var_dump($accessToken);*/
-
+    if ($accessToken != $dbData['accessToken'])
+    {
+      //each reinstall changes accessKey
+      updateDbData(
+        $_ENV['DB_HOST'],
+        $_ENV['DB_NAME'],
+        $_ENV['DB_USER'], 
+        $_ENV['DB_PASSWORD'],
+        
+        $params['shop'],
+        $params['key'],
+        $accessToken);
+    }
   }
 
   require_once('settings.php');
