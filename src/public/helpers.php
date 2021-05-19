@@ -42,7 +42,6 @@ function validateApiKey($key, $shop)
 
 function getAll($dbhost, $db, $dbuser, $dbpass)
 {
-  //TODO error handling
   $conn = new mysqli($dbhost, $dbuser, $dbpass, $db) or die("Connect failed: %s\n". $conn -> error);
 
   $stmt = $conn->prepare("SELECT shop, shopify_access_key FROM $db.clients");
@@ -63,7 +62,6 @@ function getAll($dbhost, $db, $dbuser, $dbpass)
 
 function getDbData($dbhost, $db, $dbuser, $dbpass, $shop)
 {
-  //TODO error handling
   $conn = new mysqli($dbhost, $dbuser, $dbpass, $db) or die("Connect failed: %s\n". $conn -> error);
 
   $stmt = $conn->prepare("SELECT shop, api_key, shopify_access_key FROM $db.clients WHERE shop = ?");
@@ -71,7 +69,7 @@ function getDbData($dbhost, $db, $dbuser, $dbpass, $shop)
   $stmt->execute();
   $stmt->bind_result($shop, $key, $accessKey);
 
-  if ($stmt->fetch()) //1 result
+  if ($stmt->fetch())
   {
     $arr = 
       ['shop'=>$shop,
@@ -87,7 +85,6 @@ function getDbData($dbhost, $db, $dbuser, $dbpass, $shop)
 
 function putDbData($dbhost, $db, $dbuser, $dbpass, $shop, $key, $accessToken)
 {
-  //TODO error handling
   $conn = new mysqli($dbhost, $dbuser, $dbpass, $db) or die("Connect failed: %s\n". $conn -> error);
 
   $stmt = $conn->prepare("INSERT INTO $db.clients (id, shop, api_key, shopify_access_key) VALUES (NULL, ?,?,?)");
@@ -101,7 +98,6 @@ function putDbData($dbhost, $db, $dbuser, $dbpass, $shop, $key, $accessToken)
 
 function updateDbData($dbhost, $db, $dbuser, $dbpass, $shop, $key, $accessToken)
 {
-  //TODO error handling
   $conn = new mysqli($dbhost, $dbuser, $dbpass, $db) or die("Connect failed: %s\n". $conn -> error);
 
   $stmt = $conn->prepare("UPDATE $db.clients SET api_key = ?, shopify_access_key = ? WHERE shop = ?");
@@ -218,7 +214,7 @@ function performShopifyRequest($shop, $token, $resource, $params = array(), $met
   $arr = json_decode($body, TRUE);
   if (isset($matches[1]) && trim($matches[1]) != '')
   {
-    //limit: 250 itens/request
+    //2021-04 api limit: 250 itens/request
     $arr['next'] = trim($matches[1]);
   }
 

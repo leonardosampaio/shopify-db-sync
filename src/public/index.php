@@ -18,10 +18,12 @@ $config = [
     'displayErrorDetails' => true,
     'debug'=>true
   ],
+  //debug
 ];
 
 $app = new \Slim\App($config);
 
+//cron job should call this - https://shopifysync.duckdns.org/shopify-sync/update-stock
 $app->get('/update-stock', function (Request $request, Response $response) {
   
   $starttime = microtime_float();
@@ -34,6 +36,7 @@ $app->get('/update-stock', function (Request $request, Response $response) {
 
     //debug
     '177.91.54.38'
+    //debug
   );
 
   $clientIp = $_SERVER['REMOTE_ADDR'];
@@ -166,20 +169,11 @@ $app->get('/update-stock', function (Request $request, Response $response) {
       json_encode(['status'=>'executed', 'elapsedTimeInSeconds'=>(microtime_float() - $starttime)]));
   }
 
-
   return $newResponse->getBody()->write(
     json_encode(['status'=>'error', 'message'=>"IP $clientIp is not whitelisted"]));
 });
 
-//call this js in from fronted (settings.php); if ok, submit key
-$app->get('/validate-key', function (Request $request, Response $response) {
-  $params = $request->getQueryParams();
-  $newResponse = $response->withHeader('Content-type', 'application/json');
-  return $newResponse->getBody()->write(
-    json_encode(['is_valid'=>validateApiKey($params['key'],$params['shop'])]));
-});
-
-// install route - https://shopifysync.duckdns.org/shopify-sync/?shop=zalandointegrationtestshop.myshopify.com
+// install route - https://shopifysync.duckdns.org/shopify-sync/?shop=myshop.myshopify.com
 $app->get('/', function (Request $request, Response $response) {
   $apiKey = $this->get('apiKey');
   $host = $this->get('host');
@@ -196,6 +190,7 @@ $app->get('/', function (Request $request, Response $response) {
   return $response->withRedirect($installUrl);
 });
 
+//after successful installation shopify redirects to https://shopifysync.duckdns.org/shopify-sync/auth/shopify/callback
 $app->get('/auth/shopify/callback', function (Request $request, Response $response) {
 
   $params = $request->getQueryParams();
